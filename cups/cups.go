@@ -136,9 +136,11 @@ type CUPS struct {
 	printerAttributes     []string
 	systemTags            map[string]string
 	printerBlacklist      map[string]interface{}
+	ignoreRawPrinters     bool
+	ignoreClassPrinters   bool
 }
 
-func NewCUPS(infoToDisplayName, prefixJobIDToJobTitle bool, displayNamePrefix string, printerAttributes []string, maxConnections uint, connectTimeout time.Duration, printerBlacklist []string) (*CUPS, error) {
+func NewCUPS(infoToDisplayName, prefixJobIDToJobTitle bool, displayNamePrefix string, printerAttributes []string, maxConnections uint, connectTimeout time.Duration, printerBlacklist []string, ignoreRawPrinters bool, ignoreClassPrinters bool) (*CUPS, error) {
 	if err := checkPrinterAttributes(printerAttributes); err != nil {
 		return nil, err
 	}
@@ -160,13 +162,15 @@ func NewCUPS(infoToDisplayName, prefixJobIDToJobTitle bool, displayNamePrefix st
 	}
 
 	c := &CUPS{
-		cc:                cc,
-		pc:                pc,
-		infoToDisplayName: infoToDisplayName,
-		displayNamePrefix: displayNamePrefix,
-		printerAttributes: printerAttributes,
-		systemTags:        systemTags,
-		printerBlacklist:  pb,
+		cc:                  cc,
+		pc:                  pc,
+		infoToDisplayName:   infoToDisplayName,
+		displayNamePrefix:   displayNamePrefix,
+		printerAttributes:   printerAttributes,
+		systemTags:          systemTags,
+		printerBlacklist:    pb,
+		ignoreRawPrinters:   ignoreRawPrinters,
+		ignoreClassPrinters: ignoreClassPrinters,
 	}
 
 	return c, nil
@@ -209,9 +213,15 @@ func (c *CUPS) GetPrinters() ([]lib.Printer, error) {
 
 	printers := c.responseToPrinters(response)
 	printers = c.filterBlacklistPrinters(printers)
-	printers = filterRawPrinters(printers)
+	if c.ignoreRawPrinters {
+		printers = filterRawPrinters(printers)
+	}
+	if c.ignoreClassPrinters {
+		printers = filterClassPrinters(printers)
+	}
 	printers = c.addPPDDescriptionToPrinters(printers)
 	printers = addStaticDescriptionToPrinters(printers)
+	printers = c.addSystemTagsToPrinters(printers)
 
 	return printers, nil
 }
@@ -235,9 +245,6 @@ func (c *CUPS) responseToPrinters(response *C.ipp_t) []lib.Printer {
 			defaultDisplayName = name
 		}
 		defaultDisplayName = c.displayNamePrefix + defaultDisplayName
-		for k, v := range c.systemTags {
-			tags[k] = v
-		}
 		p := lib.Printer{
 			Name:               name,
 			DefaultDisplayName: defaultDisplayName,
@@ -266,6 +273,17 @@ func (c *CUPS) filterBlacklistPrinters(printers []lib.Printer) []lib.Printer {
 	return result
 }
 
+// filterClassPrinters removes class printers from the slice.
+func filterClassPrinters(printers []lib.Printer) []lib.Printer {
+        result := make([]lib.Printer, 0, len(printers))
+        for i := range printers {
+                if !lib.PrinterIsClass(printers[i]) {
+                        result = append(result, printers[i])
+                }
+        }
+        return result
+}
+
 // filterRawPrinters removes raw printers from the slice.
 func filterRawPrinters(printers []lib.Printer) []lib.Printer {
 	result := make([]lib.Printer, 0, len(printers))
@@ -292,7 +310,7 @@ func (c *CUPS) addPPDDescriptionToPrinters(printers []lib.Printer) []lib.Printer
 				p.Model = model
 				ch <- p
 			} else {
-				log.Error(err)
+				log.ErrorPrinter(p.Name, err)
 			}
 			wg.Done()
 		}(&printers[i])
@@ -313,12 +331,21 @@ func (c *CUPS) addPPDDescriptionToPrinters(printers []lib.Printer) []lib.Printer
 // printers to printers.
 func addStaticDescriptionToPrinters(printers []lib.Printer) []lib.Printer {
 	for i := range printers {
-		printers[i].Description.Absorb(&cupsPDS)
 		printers[i].GCPVersion = lib.GCPAPIVersion
-		printers[i].ConnectorVersion = lib.ShortName
 		printers[i].SetupURL = lib.ConnectorHomeURL
 		printers[i].SupportURL = lib.ConnectorHomeURL
 		printers[i].UpdateURL = lib.ConnectorHomeURL
+		printers[i].ConnectorVersion = lib.ShortName
+		printers[i].Description.Absorb(&cupsPDS)
+	}
+	return printers
+}
+
+func (c *CUPS) addSystemTagsToPrinters(printers []lib.Printer) []lib.Printer {
+	for i := range printers {
+		for k, v := range c.systemTags {
+			printers[i].Tags[k] = v
+		}
 	}
 	return printers
 }
@@ -372,7 +399,7 @@ func (c *CUPS) RemoveCachedPPD(printername string) {
 }
 
 // GetJobState gets the current state of the job indicated by jobID.
-func (c *CUPS) GetJobState(jobID uint32) (cdd.PrintJobStateDiff, error) {
+func (c *CUPS) GetJobState(_ string, jobID uint32) (*cdd.PrintJobStateDiff, error) {
 	ja := C.newArrayOfStrings(C.int(len(jobAttributes)))
 	defer C.freeStringArrayAndStrings(ja, C.int(len(jobAttributes)))
 	for i, attribute := range jobAttributes {
@@ -381,7 +408,7 @@ func (c *CUPS) GetJobState(jobID uint32) (cdd.PrintJobStateDiff, error) {
 
 	response, err := c.cc.getJobAttributes(C.int(jobID), ja)
 	if err != nil {
-		return cdd.PrintJobStateDiff{}, err
+		return nil, err
 	}
 
 	// cupsDoRequest() returned ipp_t pointer needs explicit free.
@@ -394,7 +421,7 @@ func (c *CUPS) GetJobState(jobID uint32) (cdd.PrintJobStateDiff, error) {
 }
 
 // convertJobState converts CUPS job state to cdd.PrintJobStateDiff.
-func convertJobState(cupsState int32) cdd.PrintJobStateDiff {
+func convertJobState(cupsState int32) *cdd.PrintJobStateDiff {
 	var state cdd.PrintJobStateDiff
 
 	switch cupsState {
@@ -419,14 +446,14 @@ func convertJobState(cupsState int32) cdd.PrintJobStateDiff {
 		state.State = &cdd.JobState{Type: cdd.JobStateDone}
 	}
 
-	return state
+	return &state
 }
 
 // Print sends a new print job to the specified printer. The job ID
 // is returned.
 func (c *CUPS) Print(printer *lib.Printer, filename, title, user, gcpJobID string, ticket *cdd.CloudJobTicket) (uint32, error) {
-	printer.CUPSJobSemaphore.Acquire()
-	defer printer.CUPSJobSemaphore.Release()
+	printer.NativeJobSemaphore.Acquire()
+	defer printer.NativeJobSemaphore.Release()
 
 	pn := C.CString(printer.Name)
 	defer C.free(unsafe.Pointer(pn))
