@@ -9,6 +9,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -26,14 +27,13 @@ import (
 	"github.com/google/cups-connector/manager"
 	"github.com/google/cups-connector/monitor"
 	"github.com/google/cups-connector/privet"
-	"github.com/google/cups-connector/snmp"
 	"github.com/google/cups-connector/xmpp"
 )
 
 func main() {
 	app := cli.NewApp()
 	app.Name = "gcp-cups-connector"
-	app.Usage = "Google Cloud Print CUPS Connector"
+	app.Usage = "Google Cloud Print Connector for CUPS"
 	app.Version = lib.BuildDate
 	app.Flags = []cli.Flag{
 		lib.ConfigFilenameFlag,
@@ -55,7 +55,7 @@ func connector(context *cli.Context) int {
 		return 1
 	}
 
-	logToJournal := config.LogToJournal && journal.Enabled()
+	logToJournal := *config.LogToJournal && journal.Enabled()
 	logToConsole := context.Bool("log-to-console")
 
 	if logToJournal {
@@ -89,7 +89,11 @@ func connector(context *cli.Context) int {
 
 	if configFilename == "" {
 		log.Info("No config file was found, so using defaults")
+	} else {
+		log.Infof("Using config file %s", configFilename)
 	}
+	completeConfig, _ := json.MarshalIndent(config, "", " ")
+	log.Debugf("Config: %s", string(completeConfig))
 
 	log.Info(lib.FullName)
 	fmt.Println(lib.FullName)
@@ -150,26 +154,15 @@ func connector(context *cli.Context) int {
 		log.Fatalf("Failed to parse CUPS connect timeout: %s", err)
 		return 1
 	}
-	c, err := cups.NewCUPS(config.CUPSCopyPrinterInfoToDisplayName, config.PrefixJobIDToJobTitle,
+	c, err := cups.NewCUPS(*config.CUPSCopyPrinterInfoToDisplayName, *config.PrefixJobIDToJobTitle,
 		config.DisplayNamePrefix, config.CUPSPrinterAttributes, config.CUPSMaxConnections,
-		cupsConnectTimeout, config.PrinterBlacklist, config.CUPSIgnoreRawPrinters,
-		config.CUPSIgnoreClassPrinters)
+		cupsConnectTimeout, config.PrinterBlacklist, *config.CUPSIgnoreRawPrinters,
+		*config.CUPSIgnoreClassPrinters)
 	if err != nil {
 		log.Fatal(err)
 		return 1
 	}
 	defer c.Quit()
-
-	var s *snmp.SNMPManager
-	if config.SNMPEnable {
-		log.Info("SNMP enabled")
-		s, err = snmp.NewSNMPManager(config.SNMPCommunity, config.SNMPMaxConnections)
-		if err != nil {
-			log.Fatal(err)
-			return 1
-		}
-		defer s.Quit()
-	}
 
 	var priv *privet.Privet
 	if config.LocalPrintingEnable {
@@ -190,9 +183,9 @@ func connector(context *cli.Context) int {
 		log.Fatalf("Failed to parse CUPS printer poll interval: %s", err)
 		return 1
 	}
-	pm, err := manager.NewPrinterManager(c, g, priv, s, nativePrinterPollInterval,
-		config.NativeJobQueueSize, config.CUPSJobFullUsername, config.CUPSIgnoreRawPrinters,
-		config.ShareScope, jobs, xmppNotifications)
+	pm, err := manager.NewPrinterManager(c, g, priv, nativePrinterPollInterval,
+		config.NativeJobQueueSize, *config.CUPSJobFullUsername, config.ShareScope,
+		jobs, xmppNotifications)
 	if err != nil {
 		log.Fatal(err)
 		return 1

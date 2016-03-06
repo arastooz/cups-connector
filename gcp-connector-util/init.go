@@ -91,20 +91,6 @@ var commonInitFlags = []cli.Flag{
 		Value: lib.DefaultConfig.DisplayNamePrefix,
 	},
 	cli.BoolFlag{
-		Name:  "snmp-enable",
-		Usage: "SNMP enable",
-	},
-	cli.StringFlag{
-		Name:  "snmp-community",
-		Usage: "SNMP community (usually \"public\")",
-		Value: lib.DefaultConfig.SNMPCommunity,
-	},
-	cli.IntFlag{
-		Name:  "snmp-max-connections",
-		Usage: "Max connections to SNMP agents",
-		Value: int(lib.DefaultConfig.SNMPMaxConnections),
-	},
-	cli.BoolFlag{
 		Name:  "local-printing-enable",
 		Usage: "Enable local discovery and printing (aka GCP 2.0 or Privet)",
 	},
@@ -114,7 +100,7 @@ var commonInitFlags = []cli.Flag{
 	},
 	cli.StringFlag{
 		Name:  "log-level",
-		Usage: "Minimum event severity to log: PANIC, ERROR, WARN, INFO, DEBUG, VERBOSE",
+		Usage: "Minimum event severity to log: FATAL, ERROR, WARNING, INFO, DEBUG",
 		Value: lib.DefaultConfig.LogLevel,
 	},
 }
@@ -276,7 +262,7 @@ func createRobotAccount(context *cli.Context, userClient *http.Client) (string, 
 }
 
 func writeConfigFile(context *cli.Context, config *lib.Config) string {
-	if configFilename, err := config.ToFile(context); err != nil {
+	if configFilename, err := config.Sparse(context).ToFile(context); err != nil {
 		log.Fatalln(err)
 	} else {
 		return configFilename
@@ -364,7 +350,7 @@ func initConfigFile(context *cli.Context) {
 		if context.IsSet("proxy-name") {
 			proxyName = context.String("proxy-name")
 		} else {
-			proxyName = scanNonEmptyString("Proxy name for this GCP CUPS Connector:")
+			proxyName = scanNonEmptyString("Proxy name for this connector:")
 		}
 
 		var userClient *http.Client
