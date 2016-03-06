@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-	<Product
+  <Product
       Id="*"
       Name="Google Cloud Print CUPS Connector"
       Language="1033"
       Version="1.0.0.0"
       Manufacturer="Google, Inc."
       UpgradeCode="15C3FD61-B03C-4C04-A56D-CD8424C99D7F">
-		<Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
+    <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
 
-		<MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
-		<MediaTemplate />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MediaTemplate />
 
     <!-- Variable used by WIX at build time to find the built files -->
     <WixVariable Id="SourceDir" Overridable="yes" Value="$(env.GOPATH)\bin"/>
@@ -37,30 +37,17 @@
 		</Directory>
 	</Fragment>
 
-	<Fragment>
+  <Fragment>
     <!-- Group of components that are our main application items -->
-		<ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER" Source="!(wix.SourceDir)">
-			<Component Id="CUPS_Connector_exe">
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER" Source="!(wix.SourceDir)">
+      <Component Id="CUPS_Connector_exe">
         <File Name="gcp-windows-connector.exe" KeyPath="yes" />
         <!-- Stop the service at uninstall and remove it -->
-        <ServiceControl 
-            Id="ConnectorService"
-            Name="CUPSConnector"
-            Stop="both"
-            Remove="uninstall" />
-        <!-- Install the service.  Interactive=yes is required, because this is a console app -->
-        <ServiceInstall
-            Id="ConnectorService"
-            Name="CUPSConnector"
-            DisplayName="Google Cloud Print CUPS Connector"
-            Type="ownProcess"
-            Interactive="yes"
-            ErrorControl="normal" Start="auto" />
-			</Component>
-			<Component Id="CUPS_Connector_Util_exe">
+      </Component>
+      <Component Id="CUPS_Connector_Util_exe">
         <File Name="gcp-connector-util.exe" KeyPath="yes" />
-			</Component>
-		</ComponentGroup>
+      </Component>
+    </ComponentGroup>
 	</Fragment>
 
   <Fragment>
