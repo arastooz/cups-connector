@@ -10,10 +10,14 @@
     <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
-    <MediaTemplate />
+    <MediaTemplate EmbedCab="yes" />
 
     <!-- Variable used by WIX at build time to find the built files -->
-    <WixVariable Id="SourceDir" Overridable="yes" Value="$(env.GOPATH)\bin"/>
+    <?if $(env.GOPATH) ?>
+      <WixVariable Id="SourceDir" Overridable="yes" Value="$(env.GOPATH)\bin"/>
+    <?else?>
+      <WixVariable Id="SourceDir" Overridable="yes" Value="C:\go\bin"/>
+    <?endif?>
     <!-- Variable used by WIX at build time to locate the dependency dlls -->
     <WixVariable Id="DependencyDir" Overridable="yes" Value="C:\msys64\mingw64\bin"/>
 
