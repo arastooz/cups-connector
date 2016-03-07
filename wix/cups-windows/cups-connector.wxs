@@ -49,10 +49,34 @@
         <!-- Stop the service at uninstall and remove it -->
       </Component>
       <Component Id="CUPS_Connector_Util_exe">
-        <File Name="gcp-connector-util.exe" KeyPath="yes" />
+        <File Id="ConnectorUtil" Name="gcp-connector-util.exe" KeyPath="yes" />
       </Component>
     </ComponentGroup>
 	</Fragment>
+
+  <Fragment>
+    <InstallUISequence>
+      <ExecuteAction />
+      <Custom Action="ManualInit" After="ExecuteAction">NOT INITCMD</Custom>
+    </InstallUISequence>
+
+    <InstallExecuteSequence>
+      <RegisterProduct/>
+      <RemoveFiles/>
+      <Custom Action="SilentInit" Before="RegisterProduct">INITCMD</Custom>
+      <Custom Action="InstallService" After="SilentInit">NOT NO_INSTALL_SERVICE AND NOT Installed</Custom>
+      <Custom Action="StartService" After="InstallService">$CUPS_Connector_exe=3 AND NOT (NO_INSTALL_SERVICE OR NO_START_SERVICE)</Custom>
+      <Custom Action="StopService" Before="RemoveFiles">?CUPS_Connector_exe=3</Custom>
+      <Custom Action="UninstallService" After="StopService">$CUPS_Connector_exe=2</Custom>
+    </InstallExecuteSequence>
+
+    <CustomAction Id="SilentInit" FileKey="ConnectorUtil" Execute="deferred" ExeCommand="[INITCMD]" />
+    <CustomAction Id="ManualInit" FileKey="ConnectorUtil" Execute="immediate" ExeCommand="init" />
+    <CustomAction Id="InstallService" FileKey="ConnectorUtil" Execute="deferred" ExeCommand="create-service" />
+    <CustomAction Id="UninstallService" FileKey="ConnectorUtil" Execute="deferred" ExeCommand="delete-service" />
+    <CustomAction Id="StartService" FileKey="ConnectorUtil" Execute="deferred" ExeCommand="start-service" />
+    <CustomAction Id="StopService" FileKey="ConnectorUtil" Execute="deferred" ExeCommand="stop-service" />
+  </Fragment>
 
   <Fragment>
     <!-- Group of components of all the dependency dlls -->

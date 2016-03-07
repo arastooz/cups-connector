@@ -21,3 +21,13 @@ If mingw64 is not installed to C:\msys64\mingw64, then use -dDependencyDir=<Path
 to specify where it is installed.
 
 ## Installation Instructions
+Install the MSI by any normal method of installing an MSI file (double-clicking, automated deployment, etc.)
+
+During an installation with UI, gcp-connector-util init will be run as the last step which 
+will open a console window to initialize the connector.
+
+The following public properties may be set during install of the MSI 
+(see https://msdn.microsoft.com/en-us/library/windows/desktop/aa370912(v=vs.85).aspx) 
+* INITCMD = Command line to use to run gcp-connector-util.exe as a silent init during the install
+* NO_INSTALL_SERVICE = Set to "yes" to skip installing the service during the install
+* NO_START_SERVICE = Set to "yes" to skip starting the service during the install
