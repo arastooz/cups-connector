@@ -4,17 +4,16 @@
 // license that can be found in the LICENSE file or at
 // https://developers.google.com/open-source/licenses/bsd
 
-// +build linux darwin
+// +build linux darwin freebsd
 
 package main
 
 import (
-	"log"
 	"os"
 	"time"
 
-	"github.com/codegangsta/cli"
-	"github.com/google/cups-connector/lib"
+	"github.com/google/cloud-print-connector/lib"
+	"github.com/urfave/cli"
 )
 
 var unixInitFlags = []cli.Flag{
@@ -94,12 +93,9 @@ var unixCommands = []cli.Command{
 }
 
 func main() {
-	// Suppress date/time prefix.
-	log.SetFlags(0)
-
 	app := cli.NewApp()
-	app.Name = "gcp-cups-connector-util"
-	app.Usage = "Google Cloud Print CUPS Connector utility tools"
+	app.Name = "gcp-connector-util"
+	app.Usage = lib.ConnectorName + " for CUPS utility tools"
 	app.Version = lib.BuildDate
 	app.Flags = []cli.Flag{
 		lib.ConfigFilenameFlag,
@@ -125,8 +121,8 @@ func createCloudConfig(context *cli.Context, xmppJID, robotRefreshToken, userRef
 		XMPPPingTimeout:           context.String("xmpp-ping-timeout"),
 		XMPPPingInterval:          context.String("xmpp-ping-interval"),
 		GCPBaseURL:                lib.DefaultConfig.GCPBaseURL,
-		GCPOAuthClientID:          lib.DefaultConfig.GCPOAuthClientID,
-		GCPOAuthClientSecret:      lib.DefaultConfig.GCPOAuthClientSecret,
+		GCPOAuthClientID:          context.String("gcp-oauth-client-id"),
+		GCPOAuthClientSecret:      context.String("gcp-oauth-client-secret"),
 		GCPOAuthAuthURL:           lib.DefaultConfig.GCPOAuthAuthURL,
 		GCPOAuthTokenURL:          lib.DefaultConfig.GCPOAuthTokenURL,
 		GCPMaxConcurrentDownloads: uint(context.Int("gcp-max-concurrent-downloads")),
@@ -136,7 +132,11 @@ func createCloudConfig(context *cli.Context, xmppJID, robotRefreshToken, userRef
 		PrefixJobIDToJobTitle:     lib.PointerToBool(context.Bool("prefix-job-id-to-job-title")),
 		DisplayNamePrefix:         context.String("display-name-prefix"),
 		PrinterBlacklist:          lib.DefaultConfig.PrinterBlacklist,
+		PrinterWhitelist:          lib.DefaultConfig.PrinterWhitelist,
 		LogLevel:                  context.String("log-level"),
+
+		LocalPortLow:  uint16(context.Int("local-port-low")),
+		LocalPortHigh: uint16(context.Int("local-port-high")),
 
 		LogFileName:                      context.String("log-file-name"),
 		LogFileMaxMegabytes:              uint(context.Int("log-file-max-megabytes")),
@@ -164,7 +164,11 @@ func createLocalConfig(context *cli.Context) *lib.Config {
 		PrefixJobIDToJobTitle:     lib.PointerToBool(context.Bool("prefix-job-id-to-job-title")),
 		DisplayNamePrefix:         context.String("display-name-prefix"),
 		PrinterBlacklist:          lib.DefaultConfig.PrinterBlacklist,
+		PrinterWhitelist:          lib.DefaultConfig.PrinterWhitelist,
 		LogLevel:                  context.String("log-level"),
+
+		LocalPortLow:  uint16(context.Int("local-port-low")),
+		LocalPortHigh: uint16(context.Int("local-port-high")),
 
 		LogFileName:                      context.String("log-file-name"),
 		LogFileMaxMegabytes:              uint(context.Int("log-file-max-megabytes")),

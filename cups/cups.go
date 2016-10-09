@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://developers.google.com/open-source/licenses/bsd
 
-// +build linux darwin
+// +build linux darwin freebsd
 
 package cups
 
@@ -26,9 +26,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/google/cups-connector/cdd"
-	"github.com/google/cups-connector/lib"
-	"github.com/google/cups-connector/log"
+	"github.com/google/cloud-print-connector/cdd"
+	"github.com/google/cloud-print-connector/lib"
+	"github.com/google/cloud-print-connector/log"
 )
 
 const (
@@ -136,11 +136,14 @@ type CUPS struct {
 	printerAttributes     []string
 	systemTags            map[string]string
 	printerBlacklist      map[string]interface{}
+	printerWhitelist      map[string]interface{}
 	ignoreRawPrinters     bool
 	ignoreClassPrinters   bool
 }
 
-func NewCUPS(infoToDisplayName, prefixJobIDToJobTitle bool, displayNamePrefix string, printerAttributes []string, maxConnections uint, connectTimeout time.Duration, printerBlacklist []string, ignoreRawPrinters bool, ignoreClassPrinters bool) (*CUPS, error) {
+func NewCUPS(infoToDisplayName, prefixJobIDToJobTitle bool, displayNamePrefix string,
+	printerAttributes, vendorPPDOptions []string, maxConnections uint, connectTimeout time.Duration,
+	printerBlacklist, printerWhitelist []string, ignoreRawPrinters bool, ignoreClassPrinters bool) (*CUPS, error) {
 	if err := checkPrinterAttributes(printerAttributes); err != nil {
 		return nil, err
 	}
@@ -149,7 +152,7 @@ func NewCUPS(infoToDisplayName, prefixJobIDToJobTitle bool, displayNamePrefix st
 	if err != nil {
 		return nil, err
 	}
-	pc := newPPDCache(cc)
+	pc := newPPDCache(cc, vendorPPDOptions)
 
 	systemTags, err := getSystemTags()
 	if err != nil {
@@ -161,6 +164,11 @@ func NewCUPS(infoToDisplayName, prefixJobIDToJobTitle bool, displayNamePrefix st
 		pb[p] = struct{}{}
 	}
 
+	pw := map[string]interface{}{}
+	for _, p := range printerWhitelist {
+		pw[p] = struct{}{}
+	}
+
 	c := &CUPS{
 		cc:                  cc,
 		pc:                  pc,
@@ -169,6 +177,7 @@ func NewCUPS(infoToDisplayName, prefixJobIDToJobTitle bool, displayNamePrefix st
 		printerAttributes:   printerAttributes,
 		systemTags:          systemTags,
 		printerBlacklist:    pb,
+		printerWhitelist:    pw,
 		ignoreRawPrinters:   ignoreRawPrinters,
 		ignoreClassPrinters: ignoreClassPrinters,
 	}
@@ -212,7 +221,9 @@ func (c *CUPS) GetPrinters() ([]lib.Printer, error) {
 	}
 
 	printers := c.responseToPrinters(response)
-	printers = c.filterBlacklistPrinters(printers)
+	printers = lib.FilterBlacklistPrinters(printers, c.printerBlacklist)
+	printers = lib.FilterWhitelistPrinters(printers, c.printerWhitelist)
+
 	if c.ignoreRawPrinters {
 		printers = filterRawPrinters(printers)
 	}
@@ -263,25 +274,15 @@ func (c *CUPS) responseToPrinters(response *C.ipp_t) []lib.Printer {
 	return printers
 }
 
-func (c *CUPS) filterBlacklistPrinters(printers []lib.Printer) []lib.Printer {
+// filterClassPrinters removes class printers from the slice.
+func filterClassPrinters(printers []lib.Printer) []lib.Printer {
 	result := make([]lib.Printer, 0, len(printers))
 	for i := range printers {
-		if _, exists := c.printerBlacklist[printers[i].Name]; !exists {
+		if !lib.PrinterIsClass(printers[i]) {
 			result = append(result, printers[i])
 		}
 	}
 	return result
-}
-
-// filterClassPrinters removes class printers from the slice.
-func filterClassPrinters(printers []lib.Printer) []lib.Printer {
-        result := make([]lib.Printer, 0, len(printers))
-        for i := range printers {
-                if !lib.PrinterIsClass(printers[i]) {
-                        result = append(result, printers[i])
-                }
-        }
-        return result
 }
 
 // filterRawPrinters removes raw printers from the slice.
@@ -304,10 +305,13 @@ func (c *CUPS) addPPDDescriptionToPrinters(printers []lib.Printer) []lib.Printer
 	for i := range printers {
 		wg.Add(1)
 		go func(p *lib.Printer) {
-			if description, manufacturer, model, err := c.pc.getPPDCacheEntry(p.Name); err == nil {
+			if description, manufacturer, model, duplexMap, err := c.pc.getPPDCacheEntry(p.Name); err == nil {
 				p.Description.Absorb(description)
 				p.Manufacturer = manufacturer
 				p.Model = model
+				if duplexMap != nil {
+					p.DuplexMap = duplexMap
+				}
 				ch <- p
 			} else {
 				log.ErrorPrinter(p.Name, err)
@@ -626,5 +630,11 @@ func checkPrinterAttributes(printerAttributes []string) error {
 		}
 	}
 
+	return nil
+}
+
+// The following functions are not relevant to CUPS printing, but are required by the NativePrintSystem interface.
+
+func (c *CUPS) ReleaseJob(printerName string, jobID uint32) error {
 	return nil
 }

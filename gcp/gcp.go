@@ -26,9 +26,9 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/google/cups-connector/cdd"
-	"github.com/google/cups-connector/lib"
-	"github.com/google/cups-connector/log"
+	"github.com/google/cloud-print-connector/cdd"
+	"github.com/google/cloud-print-connector/lib"
+	"github.com/google/cloud-print-connector/log"
 )
 
 const (
@@ -147,6 +147,7 @@ func (gcp *GoogleCloudPrint) Fetch(gcpID string) ([]Job, error) {
 	responseBody, errorCode, _, err := postWithRetry(gcp.robotClient, gcp.baseURL+"fetch", form)
 	if err != nil {
 		if errorCode == 413 {
+			log.Debugf("No jobs returned by fetch (413 error)")
 			// 413 means "Zero print jobs returned", which isn't really an error.
 			return []Job{}, nil
 		}
@@ -703,7 +704,7 @@ func (gcp *GoogleCloudPrint) assembleJob(job *Job) (*cdd.CloudJobTicket, string,
 			}
 	}
 
-	file, err := ioutil.TempFile("", "cups-connector-gcp-")
+	file, err := ioutil.TempFile("", "cloud-print-connector-")
 	if err != nil {
 		return nil, "",
 			fmt.Sprintf("Failed to create a temporary file: %s", err),

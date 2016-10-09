@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://developers.google.com/open-source/licenses/bsd
 
-// +build linux darwin
+// +build linux darwin freebsd
 
 package lib
 
@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 
-	"github.com/codegangsta/cli"
+	"github.com/urfave/cli"
 	"launchpad.net/go-xdg/v0"
 )
 
@@ -86,6 +86,10 @@ type Config struct {
 	// TODO: rename without cups_ prefix
 	NativePrinterPollInterval string `json:"cups_printer_poll_interval,omitempty"`
 
+	// Use the full username (joe@example.com) in job.
+	// TODO: rename without cups_ prefix
+	CUPSJobFullUsername *bool `json:"cups_job_full_username,omitempty"`
+
 	// Add the job ID to the beginning of the job title. Useful for debugging.
 	PrefixJobIDToJobTitle *bool `json:"prefix_job_id_to_job_title,omitempty"`
 
@@ -95,8 +99,17 @@ type Config struct {
 	// Ignore printers with native names.
 	PrinterBlacklist []string `json:"printer_blacklist,omitempty"`
 
+	// Allow printers with native names.
+	PrinterWhitelist []string `json:"printer_whitelist,omitempty"`
+
 	// Least severity to log.
 	LogLevel string `json:"log_level"`
+
+	// Local only: HTTP API port range, low.
+	LocalPortLow uint16 `json:"local_port_low,omitempty"`
+
+	// Local only: HTTP API port range, high.
+	LocalPortHigh uint16 `json:"local_port_high,omitempty"`
 
 	// CUPS only: Where to place log file.
 	LogFileName string `json:"log_file_name"`
@@ -122,8 +135,8 @@ type Config struct {
 	// CUPS only: printer attributes to copy to GCP.
 	CUPSPrinterAttributes []string `json:"cups_printer_attributes,omitempty"`
 
-	// CUPS only: use the full username (joe@example.com) in CUPS job.
-	CUPSJobFullUsername *bool `json:"cups_job_full_username,omitempty"`
+	// CUPS only: non-standard PPD options to add as GCP vendor capabilities.
+	CUPSVendorPPDOptions []string `json:"cups_vendor_ppd_options,omitempty"`
 
 	// CUPS only: ignore printers with make/model 'Local Raw Printer'.
 	CUPSIgnoreRawPrinters *bool `json:"cups_ignore_raw_printers,omitempty"`
@@ -159,14 +172,18 @@ var DefaultConfig = Config{
 	PrefixJobIDToJobTitle:     PointerToBool(false),
 	DisplayNamePrefix:         "",
 	PrinterBlacklist:          []string{},
+	PrinterWhitelist:          []string{},
 	LogLevel:                  "INFO",
 
-	LogFileName:         "/tmp/cups-connector",
+	LocalPortLow:  26000,
+	LocalPortHigh: 26999,
+
+	LogFileName:         "/tmp/cloud-print-connector",
 	LogFileMaxMegabytes: 1,
 	LogMaxFiles:         3,
 	LogToJournal:        PointerToBool(false),
 
-	MonitorSocketFilename: "/tmp/cups-connector-monitor.sock",
+	MonitorSocketFilename: "/tmp/cloud-print-connector-monitor.sock",
 
 	CUPSMaxConnections: 50,
 	CUPSConnectTimeout: "5s",

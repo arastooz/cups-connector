@@ -4,11 +4,13 @@
 // license that can be found in the LICENSE file or at
 // https://developers.google.com/open-source/licenses/bsd
 
-// +build linux
+// +build linux freebsd
 
 package privet
 
-// #cgo LDFLAGS: -lavahi-client -lavahi-common
+// #cgo linux LDFLAGS: -lavahi-client -lavahi-common
+// #cgo freebsd CFLAGS: -I/usr/local/include
+// #cgo freebsd LDFLAGS: -L/usr/local/lib -lavahi-client -lavahi-common
 // #include "avahi.h"
 import "C"
 import (
@@ -17,13 +19,14 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/google/cups-connector/log"
+	"github.com/google/cloud-print-connector/log"
 )
 
 var (
 	txtversKey     = C.CString("txtvers")
 	txtversValue   = C.CString("1")
 	tyKey          = C.CString("ty")
+	noteKey        = C.CString("note")
 	urlKey         = C.CString("url")
 	typeKey        = C.CString("type")
 	typeValue      = C.CString("printer")
@@ -39,6 +42,7 @@ type record struct {
 	name   *C.char
 	port   uint16
 	ty     string
+	note   string
 	url    string
 	id     string
 	online bool
@@ -79,7 +83,7 @@ func newZeroconf() (*zeroconf, error) {
 	return &z, nil
 }
 
-func prepareTXT(ty, url, id string, online bool) *C.AvahiStringList {
+func prepareTXT(ty, note, url, id string, online bool) *C.AvahiStringList {
 	var txt *C.AvahiStringList
 	txt = C.avahi_string_list_add_pair(txt, txtversKey, txtversValue)
 	txt = C.avahi_string_list_add_pair(txt, typeKey, typeValue)
@@ -87,6 +91,12 @@ func prepareTXT(ty, url, id string, online bool) *C.AvahiStringList {
 	tyValue := C.CString(ty)
 	defer C.free(unsafe.Pointer(tyValue))
 	txt = C.avahi_string_list_add_pair(txt, tyKey, tyValue)
+
+	if note != "" {
+		noteValue := C.CString(note)
+		defer C.free(unsafe.Pointer(noteValue))
+		txt = C.avahi_string_list_add_pair(txt, noteKey, noteValue)
+	}
 
 	urlValue := C.CString(url)
 	defer C.free(unsafe.Pointer(urlValue))
@@ -105,11 +115,12 @@ func prepareTXT(ty, url, id string, online bool) *C.AvahiStringList {
 	return txt
 }
 
-func (z *zeroconf) addPrinter(name string, port uint16, ty, url, id string, online bool) error {
+func (z *zeroconf) addPrinter(name string, port uint16, ty, note, url, id string, online bool) error {
 	r := record{
 		name:   C.CString(name),
 		port:   port,
 		ty:     ty,
+		note:   note,
 		url:    url,
 		id:     id,
 		online: online,
@@ -122,7 +133,7 @@ func (z *zeroconf) addPrinter(name string, port uint16, ty, url, id string, onli
 		return fmt.Errorf("printer %s was already added to Avahi publishing", name)
 	}
 	if z.state == C.AVAHI_CLIENT_S_RUNNING {
-		txt := prepareTXT(ty, url, id, online)
+		txt := prepareTXT(ty, note, url, id, online)
 		defer C.avahi_string_list_free(txt)
 
 		C.avahi_threaded_poll_lock(z.threadedPoll)
@@ -138,7 +149,7 @@ func (z *zeroconf) addPrinter(name string, port uint16, ty, url, id string, onli
 	return nil
 }
 
-func (z *zeroconf) updatePrinterTXT(name, ty, url, id string, online bool) error {
+func (z *zeroconf) updatePrinterTXT(name, ty, note, url, id string, online bool) error {
 	z.spMutex.Lock()
 	defer z.spMutex.Unlock()
 
@@ -153,7 +164,7 @@ func (z *zeroconf) updatePrinterTXT(name, ty, url, id string, online bool) error
 	r.online = online
 
 	if z.state == C.AVAHI_CLIENT_S_RUNNING && r.group != nil {
-		txt := prepareTXT(ty, url, id, online)
+		txt := prepareTXT(ty, note, url, id, online)
 		defer C.avahi_string_list_free(txt)
 
 		C.avahi_threaded_poll_lock(z.threadedPoll)
@@ -260,7 +271,7 @@ func handleClientStateChange(client *C.AvahiClient, newState C.AvahiClientState,
 	if newState == C.AVAHI_CLIENT_S_RUNNING {
 		log.Info("Local printing enabled (Avahi client is running).")
 		for name, r := range z.printers {
-			txt := prepareTXT(r.ty, r.url, r.id, r.online)
+			txt := prepareTXT(r.ty, r.note, r.url, r.id, r.online)
 			defer C.avahi_string_list_free(txt)
 
 			if errstr := C.addAvahiGroup(z.threadedPoll, z.client, &r.group, r.name, C.ushort(r.port), txt); errstr != nil {

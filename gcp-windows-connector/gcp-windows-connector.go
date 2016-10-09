@@ -14,13 +14,13 @@ import (
 	"os"
 	"time"
 
-	"github.com/codegangsta/cli"
-	"github.com/google/cups-connector/gcp"
-	"github.com/google/cups-connector/lib"
-	"github.com/google/cups-connector/log"
-	"github.com/google/cups-connector/manager"
-	"github.com/google/cups-connector/winspool"
-	"github.com/google/cups-connector/xmpp"
+	"github.com/urfave/cli"
+	"github.com/google/cloud-print-connector/gcp"
+	"github.com/google/cloud-print-connector/lib"
+	"github.com/google/cloud-print-connector/log"
+	"github.com/google/cloud-print-connector/manager"
+	"github.com/google/cloud-print-connector/winspool"
+	"github.com/google/cloud-print-connector/xmpp"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/debug"
 )
@@ -28,12 +28,12 @@ import (
 func main() {
 	app := cli.NewApp()
 	app.Name = "gcp-windows-connector"
-	app.Usage = "Google Cloud Print Connector for Windows"
+	app.Usage = lib.ConnectorName + " for Windows"
 	app.Version = lib.BuildDate
 	app.Flags = []cli.Flag{
 		lib.ConfigFilenameFlag,
 	}
-	app.Action = RunService
+	app.Action = runService
 	app.Run(os.Args)
 }
 
@@ -53,19 +53,18 @@ type service struct {
 	interactive bool
 }
 
-func RunService(context *cli.Context) {
+func runService(context *cli.Context) error {
 	interactive, err := svc.IsAnInteractiveSession()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to detect interactive session: %s\n", err)
-		os.Exit(1)
+		return fmt.Errorf("Failed to detect interactive session: %s", err)
 	}
 
 	s := service{context, interactive}
 
 	if interactive {
-		debug.Run(lib.ConnectorName, &s)
+		return debug.Run(lib.ConnectorName, &s)
 	} else {
-		svc.Run(lib.ConnectorName, &s)
+		return svc.Run(lib.ConnectorName, &s)
 	}
 }
 
@@ -149,7 +148,7 @@ func (service *service) Execute(args []string, r <-chan svc.ChangeRequest, s cha
 		defer x.Quit()
 	}
 
-	ws, err := winspool.NewWinSpool(*config.PrefixJobIDToJobTitle, config.DisplayNamePrefix, config.PrinterBlacklist)
+	ws, err := winspool.NewWinSpool(*config.PrefixJobIDToJobTitle, config.DisplayNamePrefix, config.PrinterBlacklist, config.PrinterWhitelist)
 	if err != nil {
 		log.Fatal(err)
 		return false, 1
@@ -161,7 +160,7 @@ func (service *service) Execute(args []string, r <-chan svc.ChangeRequest, s cha
 		return false, 1
 	}
 	pm, err := manager.NewPrinterManager(ws, g, nil, nativePrinterPollInterval,
-		config.NativeJobQueueSize, false, config.ShareScope, jobs, xmppNotifications)
+		config.NativeJobQueueSize, *config.CUPSJobFullUsername, config.ShareScope, jobs, xmppNotifications)
 	if err != nil {
 		log.Fatal(err)
 		return false, 1
